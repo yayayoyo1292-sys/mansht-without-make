@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -105,15 +104,16 @@ class QueueManager:
                     SELECT *
                     FROM news_queue
                     WHERE status = 'pending'
+                      AND (retry_after IS NULL OR retry_after <= NOW())
                     ORDER BY
                         CASE
                             WHEN (EXTRACT(EPOCH FROM NOW()) - created_at) / 3600
                                  > %(max_age)s THEN 0
                             ELSE 1
                         END ASC,
-                        created_at ASC,
                         priority_score DESC,
-                        final_score DESC
+                        final_score DESC,
+                        created_at ASC
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
                     """,
