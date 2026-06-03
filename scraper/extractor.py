@@ -43,7 +43,9 @@ def clean_image_url(src: Optional[str]) -> Optional[str]:
     if not src:
         return None
     full_url = urljoin(BASE_URL, src)
+    # إصلاح مسارات UploadCache المعروفة
     full_url = full_url.replace("/UploadCache/libfiles/", "/Upload/libfiles/")
+    full_url = full_url.replace("/UploadCache/files/",    "/Upload/files/")
     full_url = re.sub(r"/\d+x\d+o?/", "/", full_url)
     return full_url
 
@@ -303,8 +305,18 @@ async def category_worker(
                 scraped_at = now_ts()
                 content    = await _fetch_article_content(session, url)
 
-                # لو الصورة مش موجودة في الكارد، جرب تجيبها من الصفحة نفسها
+                # لو الصورة مش موجودة أو URL غلط، جرب og:image من الصفحة
                 article_image = item["image"]
+                if article_image:
+                    # تحقق إن الصورة فعلاً موجودة (HEAD request سريع)
+                    try:
+                        async with session.head(article_image, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                            if r.status >= 400:
+                                logger.warning(f"⚠️ Card image {r.status} — trying og:image | {item['title'][:50]}")
+                                article_image = None
+                    except Exception:
+                        article_image = None
+
                 if not article_image:
                     article_image = await _fetch_article_og_image(session, url)
                     if article_image:
