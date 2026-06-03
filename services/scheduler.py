@@ -21,14 +21,18 @@ _FINAL_SKIP = frozenset({
     "skipped:fb_outside_date_window",
     "skipped:unknown_platform",
     "sent",
+    "failed",   # permanent failure (no credits, auth error) → done, no retry
 })
 
 def _is_done(status: str) -> bool:
     return status in _FINAL_SKIP
 
 def _needs_retry(status: str) -> bool:
-    """Rate-limited or failed → must retry later."""
-    return status.startswith("rate_limited") or status == "failed"
+    """Rate-limited → retry later. Pure API failure (credits/auth) → no retry."""
+    if status.startswith("rate_limited"):
+        return True
+    # "failed" alone retries, but permanent errors don't
+    return False
 
 
 def _publish_one(post: dict) -> None:
@@ -73,6 +77,10 @@ def _publish_one(post: dict) -> None:
         return
 
     # ── Publish pending platforms ─────────────────────────────────────────────
+    # Don't re-send Telegram if already sent
+    if _is_done(current["telegram"]):
+        post["_skip_telegram"] = True
+
     results = _pipeline.publish(post, priority_score=priority)
 
     # Merge results with current state
@@ -101,7 +109,25 @@ def _publish_one(post: dict) -> None:
     )
 
     if needs_retry:
-        # Put back to pending so the worker picks it up again after cooldown
+        # Max 5 retries per post to avoid infinite loops
+        retry_count = int(post.get("retry_count") or 0) + 1
+        MAX_RETRIES = 5
+
+        if retry_count > MAX_RETRIES:
+            logger.warning(
+                f"⛔ Max retries ({MAX_RETRIES}) reached | id={post_id} | marking published"
+            )
+            # Force-mark as published even if some platforms failed
+            db_execute(
+                """
+                UPDATE news_queue
+                SET status='published', published_at=NOW(), last_updated=NOW()
+                WHERE id=%s AND status='processing'
+                """,
+                (post_id,),
+            )
+            return
+
         retry_delay_seconds = _get_retry_delay(new_statuses, target_platforms)
 
         db_execute(
@@ -114,6 +140,7 @@ def _publish_one(post: dict) -> None:
                 facebook_status  = %s,
                 twitter_status   = %s,
                 retry_after      = NOW() + (%s || ' seconds')::interval,
+                retry_count      = %s,
                 last_updated     = NOW()
             WHERE id = %s AND status = 'processing'
             """,
@@ -123,11 +150,12 @@ def _publish_one(post: dict) -> None:
                 new_statuses["facebook"],
                 new_statuses["twitter"],
                 retry_delay_seconds,
+                retry_count,
                 post_id,
             ),
         )
         logger.info(
-            f"♻️  Retry queued | id={post_id} | retry in {retry_delay_seconds}s | "
+            f"♻️  Retry queued | id={post_id} | attempt {retry_count}/{MAX_RETRIES} | retry in {retry_delay_seconds}s | "
             + " ".join(f"{p}={new_statuses[p]}" for p in target_platforms)
         )
     else:
