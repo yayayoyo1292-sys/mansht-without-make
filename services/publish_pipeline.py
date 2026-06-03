@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import hashlib
@@ -327,12 +326,15 @@ class PublishPipeline:
         results: dict[str, str] = {}
 
 
-        try:
-            tg_sent = self._telegram.publish(post)
-            results["telegram"] = "sent" if tg_sent else "failed"
-        except Exception as exc:
-            results["telegram"] = f"failed:{exc}"
-            logger.error(f"❌ Telegram failed | article_id={article_id} | {exc}")
+        if post.get("_skip_telegram"):
+            results["telegram"] = "sent"  # already sent in a previous attempt
+        else:
+            try:
+                tg_sent = self._telegram.publish(post)
+                results["telegram"] = "sent" if tg_sent else "failed"
+            except Exception as exc:
+                results["telegram"] = f"failed:{exc}"
+                logger.error(f"❌ Telegram failed | article_id={article_id} | {exc}")
 
 
         if is_high:
