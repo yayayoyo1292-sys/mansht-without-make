@@ -305,22 +305,25 @@ async def category_worker(
                 scraped_at = now_ts()
                 content    = await _fetch_article_content(session, url)
 
-                # لو الصورة مش موجودة أو URL غلط، جرب og:image من الصفحة
-                article_image = item["image"]
+                # الأولوية: og:image من صفحة الخبر (أكثر دقة وأحدث)
+                # fallback: صورة الكارد من القائمة
+                article_image = await _fetch_article_og_image(session, url)
                 if article_image:
-                    # تحقق إن الصورة فعلاً موجودة (HEAD request سريع)
-                    try:
-                        async with session.head(article_image, timeout=aiohttp.ClientTimeout(total=5)) as r:
-                            if r.status >= 400:
-                                logger.warning(f"⚠️ Card image {r.status} — trying og:image | {item['title'][:50]}")
-                                article_image = None
-                    except Exception:
-                        article_image = None
-
-                if not article_image:
-                    article_image = await _fetch_article_og_image(session, url)
+                    logger.debug(f"🖼️  og:image used | {item['title'][:60]}")
+                else:
+                    # جرب صورة الكارد مع التحقق من وجودها
+                    card_image = item["image"]
+                    if card_image:
+                        try:
+                            async with session.head(card_image, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                                if r.status < 400:
+                                    article_image = card_image
+                                else:
+                                    logger.warning(f"⚠️ Card image {r.status} — no image available | {item['title'][:50]}")
+                        except Exception:
+                            pass
                     if article_image:
-                        logger.info(f"🖼️  OG image fallback used for: {item['title'][:60]}")
+                        logger.info(f"🖼️  Card image fallback used | {item['title'][:60]}")
 
                 article = {
                     "title":        item["title"],
