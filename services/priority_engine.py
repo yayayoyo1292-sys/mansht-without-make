@@ -183,7 +183,7 @@ def calculate_priority_score(
     content: str = "",
 ) -> int:
     
-    text    = _normalize(f"{title} {content}")
+    text = _normalize(title)
     highest = 0
     for kw, (score, _tier) in _KW_MAP.items():
         if _normalize(kw) in text:
@@ -197,7 +197,7 @@ def calculate_keyword_score(
     content: str = "",
 ) -> int:
 
-    text  = _normalize(f"{title} {content}")
+    text = _normalize(title)
     score = 0
     seen  : set[str] = set()   
     for kw, (kw_score, _tier) in _KW_MAP.items():
@@ -215,7 +215,7 @@ def explain_priority(
 
     from config.settings import PRIORITY_THRESHOLD_INSTAGRAM
 
-    text    = _normalize(f"{title} {content}")
+    text = _normalize(title)
     matched = []
     seen    : set[str] = set()
 
