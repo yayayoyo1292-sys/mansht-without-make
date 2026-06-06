@@ -128,14 +128,16 @@ async def _fetch_html(
                 return await resp.text(encoding="utf-8", errors="replace")
         except Exception as exc:
             last_exc = exc
+            exc_msg = repr(exc) if not str(exc).strip() else str(exc)
             if attempt < retries:
                 wait = SCRAPE_RETRY_DELAY * attempt
                 logger.warning(
                     f"⚠️ fetch attempt {attempt}/{retries} failed for {url}: "
-                    f"{exc} — retrying in {wait}s"
+                    f"{exc_msg} — retrying in {wait}s"
                 )
                 await asyncio.sleep(wait)
-    logger.error(f"❌ All {retries} fetch attempts failed for {url}: {last_exc}")
+    exc_msg = repr(last_exc) if not str(last_exc).strip() else str(last_exc)
+    logger.error(f"❌ All {retries} fetch attempts failed for {url}: {exc_msg}")
     return None
 
 
